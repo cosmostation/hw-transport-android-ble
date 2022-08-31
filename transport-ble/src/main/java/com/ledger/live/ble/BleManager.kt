@@ -164,6 +164,8 @@ class BleManager internal constructor(
         scannedDevices = mutableListOf()
 
         val scanSettings = ScanSettings.Builder()
+            .setNumOfMatches(ScanSettings.MATCH_NUM_FEW_ADVERTISEMENT) // Add for being sure to have total informations
+            .setMatchMode(ScanSettings.MATCH_MODE_STICKY)// Same need higher signal for being listed
             .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
             .setCallbackType(ScanSettings.CALLBACK_TYPE_FIRST_MATCH or ScanSettings.CALLBACK_TYPE_MATCH_LOST)
             .build()
