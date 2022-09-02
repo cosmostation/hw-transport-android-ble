@@ -2,6 +2,7 @@ package com.ledger.live.ble.service
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattService
 import android.content.Context
 import androidx.annotation.VisibleForTesting
@@ -48,6 +49,7 @@ class BleServiceStateMachine(
 
     fun build(context: Context) {
         val bluetoothGATT = device.connectGatt(context, false, gattCallbackFlow)
+        bluetoothGATT.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
         timeoutJob = scope.launch {
             delay(CONNECT_TIMEOUT)
             _stateMachineFlow.tryEmit(BleServiceState.Error(ERROR_TIMEOUT))
