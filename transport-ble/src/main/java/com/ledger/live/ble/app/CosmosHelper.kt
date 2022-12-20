@@ -16,102 +16,102 @@ class CosmosHelper {
         private const val SW_OK = "9000";
         private const val SW_CANCEL = "6986";
         private const val SW_UNKNOWN = "9999";
-    }
 
-    private fun serializePath(hdPath: String = "44'/118'/0'/0/0"): ByteArray {
-        val paths = hdPath.split("/")
-        var pathBytes = byteArrayOf()
-        paths.forEach { path ->
-            val regex = Regex("(\\d+)([hH']?)")
-            val matchResult = regex.find(path)
-            matchResult?.let { match ->
-                var value = 0L
-                match.groups[1]?.let {
-                    value += it.value.toLong()
+        fun getAddress(bleManager: BleManager, listener: GetAddressListener) {
+            if (!bleManager.isConnected) {
+                return
+            }
+
+            val pathBytes = serializeHRP() + serializePath()
+            val byteArray = byteArrayOf(
+                CLA.toByte(), INS_GET_ADDR_SECP256K1.toByte(), 0.toByte(), 0.toByte()
+            ) + pathBytes.size.toByte() + pathBytes
+
+            bleManager.send(apduHex = byteArray.toHexString(), onError = {
+                listener.error(SW_UNKNOWN, it)
+            }, onSuccess = {
+                val resultCode = it.substring(it.length - 4, it.length)
+                if (resultCode == SW_OK) {
+                    val address = String(it.substring(66, it.length - 4).fromHexStringToBytes())
+                    val pubKey = it.substring(0, 66).fromHexStringToBytes()
+                    listener.success(address, pubKey)
+                } else {
+                    listener.error(resultCode, it.substring(0, it.length - 4))
                 }
-                match.groups[2]?.let {
-                    if (listOf("h", "H", "'").contains(it.value)) {
-                        value += 0x80000000
+
+            })
+        }
+
+        fun sign(bleManager: BleManager, message: String, listener: SignListener) {
+            val serializedPath = serializePath()
+            val chunks = mutableListOf<ByteArray>()
+            chunks.add(serializedPath)
+            val buffer = message.toByteArray()
+            buffer.iterator().asSequence().chunked(CHUNK_SIZE).forEach {
+                chunks.add(it.toByteArray())
+            }
+
+            for ((index, value) in chunks.withIndex()) {
+                when (index) {
+                    0 -> {
+                        bleManager.send(makeSignChunkBytes(value, PAYLOAD_TYPE_INIT))
+                    }
+                    chunks.count() - 1 -> {
+                        val apduHex = makeSignChunkBytes(value, PAYLOAD_TYPE_LAST).toHexString()
+                        bleManager.send(apduHex = apduHex, onError = {
+                            listener.error(SW_UNKNOWN, it)
+                        }, onSuccess = {
+                            val resultCode = it.substring(it.length - 4, it.length)
+                            if (resultCode == SW_OK) {
+                                val signed = it.substring(0, it.length - 4).fromHexStringToBytes()
+                                listener.success(signed)
+                            } else {
+                                listener.error(resultCode, it.substring(0, it.length - 4))
+                            }
+                        })
+                    }
+                    else -> {
+                        bleManager.send(makeSignChunkBytes(value, PAYLOAD_TYPE_ADD))
                     }
                 }
-                pathBytes += ByteArray(4) { i -> (value shr (i * 8)).toByte() }
+
             }
         }
-        return pathBytes
-    }
 
-    private fun serializeHRP(hrp: String = "cosmos"): ByteArray {
-        var hrpBytes = byteArrayOf()
-        hrpBytes += hrp.length.toByte()
-        hrpBytes += hrp.toByteArray()
-        return hrpBytes
-    }
-
-    fun getAddress(bleManager: BleManager, listener: GetAddressListener) {
-        if (!bleManager.isConnected) {
-            return
-        }
-
-        val pathBytes = serializeHRP() + serializePath()
-        val byteArray = byteArrayOf(
-            CLA.toByte(), INS_GET_ADDR_SECP256K1.toByte(), 0.toByte(), 0.toByte()
-        ) + pathBytes.size.toByte() + pathBytes
-
-        bleManager.send(apduHex = byteArray.toHexString(), onError = {
-            listener.error(SW_UNKNOWN, it)
-        }, onSuccess = {
-            val resultCode = it.substring(it.length - 4, it.length)
-            if (resultCode == SW_OK) {
-                val address = String(it.substring(66, it.length - 4).fromHexStringToBytes())
-                val pubKey = it.substring(0, 66).fromHexStringToBytes()
-                listener.success(address, pubKey)
-            } else {
-                listener.error(resultCode, it.substring(0, it.length - 4))
-            }
-
-        })
-    }
-
-    fun sign(bleManager: BleManager, message: String, listener: SignListener) {
-        val serializedPath = serializePath()
-        val chunks = mutableListOf<ByteArray>()
-        chunks.add(serializedPath)
-        val buffer = message.toByteArray()
-        buffer.iterator().asSequence().chunked(CHUNK_SIZE).forEach {
-            chunks.add(it.toByteArray())
-        }
-
-        for ((index, value) in chunks.withIndex()) {
-            when (index) {
-                0 -> {
-                    bleManager.send(makeSignChunkBytes(value, PAYLOAD_TYPE_INIT))
-                }
-                chunks.count() - 1 -> {
-                    val apduHex = makeSignChunkBytes(value, PAYLOAD_TYPE_LAST).toHexString()
-                    bleManager.send(apduHex = apduHex, onError = {
-                        listener.error(SW_UNKNOWN, it)
-                    }, onSuccess = {
-                        val resultCode = it.substring(it.length - 4, it.length)
-                        if (resultCode == SW_OK) {
-                            val signed = it.substring(0, it.length - 4).fromHexStringToBytes()
-                            listener.success(signed)
-                        } else {
-                            listener.error(resultCode, it.substring(0, it.length - 4))
+        private fun serializePath(hdPath: String = "44'/118'/0'/0/0"): ByteArray {
+            val paths = hdPath.split("/")
+            var pathBytes = byteArrayOf()
+            paths.forEach { path ->
+                val regex = Regex("(\\d+)([hH']?)")
+                val matchResult = regex.find(path)
+                matchResult?.let { match ->
+                    var value = 0L
+                    match.groups[1]?.let {
+                        value += it.value.toLong()
+                    }
+                    match.groups[2]?.let {
+                        if (listOf("h", "H", "'").contains(it.value)) {
+                            value += 0x80000000
                         }
-                    })
-                }
-                else -> {
-                    bleManager.send(makeSignChunkBytes(value, PAYLOAD_TYPE_ADD))
+                    }
+                    pathBytes += ByteArray(4) { i -> (value shr (i * 8)).toByte() }
                 }
             }
-
+            return pathBytes
         }
-    }
 
-    private fun makeSignChunkBytes(chunkBytes: ByteArray, payload: Int): ByteArray {
-        return byteArrayOf(
-            CLA.toByte(), INS_SIGN_SECP256K1.toByte(), payload.toByte(), 0.toByte()
-        ) + chunkBytes.size.toByte() + chunkBytes
+        private fun serializeHRP(hrp: String = "cosmos"): ByteArray {
+            var hrpBytes = byteArrayOf()
+            hrpBytes += hrp.length.toByte()
+            hrpBytes += hrp.toByteArray()
+            return hrpBytes
+        }
+
+        private fun makeSignChunkBytes(chunkBytes: ByteArray, payload: Int): ByteArray {
+            return byteArrayOf(
+                CLA.toByte(), INS_SIGN_SECP256K1.toByte(), payload.toByte(), 0.toByte()
+            ) + chunkBytes.size.toByte() + chunkBytes
+        }
     }
 
     interface GetAddressListener {
