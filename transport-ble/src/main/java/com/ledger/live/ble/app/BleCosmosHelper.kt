@@ -4,7 +4,7 @@ import com.ledger.live.ble.BleManager
 import com.ledger.live.ble.extension.fromHexStringToBytes
 import com.ledger.live.ble.extension.toHexString
 
-class CosmosHelper {
+class BleCosmosHelper {
     companion object {
         private const val CHUNK_SIZE = 250;
         private const val CLA = 0x55;
@@ -17,12 +17,17 @@ class CosmosHelper {
         private const val SW_CANCEL = "6986";
         private const val SW_UNKNOWN = "9999";
 
-        fun getAddress(bleManager: BleManager, listener: GetAddressListener) {
+        fun getAddress(
+            bleManager: BleManager,
+            hrp: String = "cosmos",
+            hdPath: String = "44'/118'/0'/0/0",
+            listener: GetAddressListener
+        ) {
             if (!bleManager.isConnected) {
                 return
             }
 
-            val pathBytes = serializeHRP() + serializePath()
+            val pathBytes = serializeHRP(hrp) + serializePath(hdPath)
             val byteArray = byteArrayOf(
                 CLA.toByte(), INS_GET_ADDR_SECP256K1.toByte(), 0.toByte(), 0.toByte()
             ) + pathBytes.size.toByte() + pathBytes
@@ -42,8 +47,13 @@ class CosmosHelper {
             })
         }
 
-        fun sign(bleManager: BleManager, message: String, listener: SignListener) {
-            val serializedPath = serializePath()
+        fun sign(
+            bleManager: BleManager,
+            hdPath: String = "44'/118'/0'/0/0",
+            message: String,
+            listener: SignListener
+        ) {
+            val serializedPath = serializePath(hdPath)
             val chunks = mutableListOf<ByteArray>()
             chunks.add(serializedPath)
             val buffer = message.toByteArray()
@@ -78,7 +88,7 @@ class CosmosHelper {
             }
         }
 
-        private fun serializePath(hdPath: String = "44'/118'/0'/0/0"): ByteArray {
+        private fun serializePath(hdPath: String): ByteArray {
             val paths = hdPath.split("/")
             var pathBytes = byteArrayOf()
             paths.forEach { path ->
@@ -100,7 +110,7 @@ class CosmosHelper {
             return pathBytes
         }
 
-        private fun serializeHRP(hrp: String = "cosmos"): ByteArray {
+        private fun serializeHRP(hrp: String): ByteArray {
             var hrpBytes = byteArrayOf()
             hrpBytes += hrp.length.toByte()
             hrpBytes += hrp.toByteArray()
