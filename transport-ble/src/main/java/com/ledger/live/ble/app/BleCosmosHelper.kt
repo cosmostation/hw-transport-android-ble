@@ -61,31 +61,44 @@ class BleCosmosHelper {
                 chunks.add(it.toByteArray())
             }
 
-            for ((index, value) in chunks.withIndex()) {
-                when (index) {
-                    0 -> {
-                        bleManager.send(makeSignChunkBytes(value, PAYLOAD_TYPE_INIT))
-                    }
-                    chunks.count() - 1 -> {
-                        val apduHex = makeSignChunkBytes(value, PAYLOAD_TYPE_LAST).toHexString()
-                        bleManager.send(apduHex = apduHex, onError = {
-                            listener.error(SW_UNKNOWN, it)
-                        }, onSuccess = {
-                            val resultCode = it.substring(it.length - 4, it.length)
-                            if (resultCode == SW_OK) {
-                                val signed = it.substring(0, it.length - 4).fromHexStringToBytes()
-                                listener.success(signed)
-                            } else {
-                                listener.error(resultCode, it.substring(0, it.length - 4))
-                            }
-                        })
-                    }
-                    else -> {
-                        bleManager.send(makeSignChunkBytes(value, PAYLOAD_TYPE_ADD))
-                    }
-                }
+            sendChunks(bleManager, chunks, chunks.size, 0, listener)
+        }
 
+        private fun sendChunks(
+            bleManager: BleManager,
+            chunks: MutableList<ByteArray>,
+            chunkSize: Int,
+            index: Int,
+            listener: SignListener
+        ) {
+
+            val payload = when (index) {
+                0 -> {
+                    PAYLOAD_TYPE_INIT
+                }
+                chunkSize - 1 -> {
+                    PAYLOAD_TYPE_LAST
+                }
+                else -> {
+                    PAYLOAD_TYPE_ADD
+                }
             }
+            bleManager.send(makeSignChunkBytes(chunks.first(), payload).toHexString(), {
+                val resultCode = it.substring(it.length - 4, it.length)
+                if (resultCode == SW_OK) {
+                    val signed = it.substring(0, it.length - 4).fromHexStringToBytes()
+                    if (payload == PAYLOAD_TYPE_LAST) {
+                        listener.success(signed)
+                    } else {
+                        chunks.removeAt(0)
+                        sendChunks(bleManager, chunks, chunkSize, index + 1, listener)
+                    }
+                } else {
+                    listener.error(resultCode, it.substring(0, it.length - 4))
+                }
+            }, {
+                listener.error(SW_UNKNOWN, it)
+            })
         }
 
         private fun serializePath(hdPath: String): ByteArray {
